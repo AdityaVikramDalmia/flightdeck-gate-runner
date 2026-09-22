@@ -7,6 +7,7 @@ maintainer's direction, effective 2026-09-22. They remain reference artifacts.
 
 - [Source history and attribution](history.md)
 - [Readiness and remaining launch work](readiness.md)
+- [Late-cancellation fix and macOS validation receipt](c1-validation-2026-09-22.md)
 - [License](../../LICENSE) and [notice](../../NOTICE)
 - [Component provenance](../../PROVENANCE.md)
 
