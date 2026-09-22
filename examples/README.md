@@ -1,5 +1,7 @@
 # Disposable example
 
+Deprecated reference example for new Claude Code integrations (2026-09-22).
+
 From the Gate Runner checkout, capture its launcher path and create a small Git
 project. The fixture identity is local to this repository:
 

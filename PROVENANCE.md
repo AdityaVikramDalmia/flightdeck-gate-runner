@@ -25,4 +25,4 @@ are judged by their exit status. Project-specific suite parsing, automatic rerun
 notifications, and private integration hooks were removed.
 
 No public remote, personal filesystem path, or private incident history is needed
-to build or run this repository. Licensing is pending repository-owner review.
+to build or run this repository. The owner selected Apache-2.0 on 2026-09-22. See LICENSE and NOTICE; public launch remains deferred.

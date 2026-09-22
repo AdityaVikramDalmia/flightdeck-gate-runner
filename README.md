@@ -1,10 +1,14 @@
 # Gate Runner
 
+> **Deprecated for new Claude Code integrations — 2026-09-22.** Retained as an
+> Apache-2.0 reference project. Public launch remains deferred and the repository
+> remains private. This is a maintainer status decision, not a claim that Claude
+> Code replaces every capability. No ongoing feature work or support is promised.
+
 Run a development command once for a Git code state, join an existing run, and
 read its result after the launching terminal has gone away.
 
-**Private release candidate: 0.1.0rc1.** This repository is not licensed for public
-redistribution yet.
+**Private release candidate: 0.1.0rc1.** Licensed under Apache-2.0; public launch is deferred.
 
 Gate Runner records command output, the actual exit code, timestamps, and immutable
 attempts under your repository's Git directory. Concurrent starts for the same
@@ -92,3 +96,10 @@ gate-run start --wait --env-key CI --input .env.test --salt 'toolchain-2026-09' 
 Run the self-contained regression suite with `make test`.
 See [the documentation index](docs/README.md) for lifecycle guarantees, stored
 records, limits, and [a complete fixture example](examples/README.md).
+
+## License and maintenance
+
+Copyright 2026 Aditya Dalmia. Licensed under [Apache-2.0](LICENSE), with
+[attribution](NOTICE) and [source provenance](PROVENANCE.md). Public launch is
+deferred; repository access remains private. See the [release preparation index](docs/release/README.md),
+[contributing guide](CONTRIBUTING.md), and [security contact](SECURITY.md).
