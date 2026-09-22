@@ -20,8 +20,17 @@ commands are unsupported.
 - **error**: launch/tool error, supervisor interruption, or changed inputs.
 - **died**: no terminal record and no remaining lock holder.
 
-A SIGTERM/SIGINT/SIGHUP to the supervisor terminates the command group, with a
-SIGKILL fallback after two seconds, and records `error`. SIGKILL allows no cleanup:
+A SIGTERM/SIGINT/SIGHUP accepted before the completion boundary records `error`.
+While the command is active, cancellation also terminates its group, with a
+SIGKILL fallback after two seconds. Cancellation remains accepted during final
+input validation, even after a successful command exit. Once validation finishes,
+the supervisor atomically blocks these three signals, checks accepted
+interruptions again, and publishes the terminal result while they remain blocked.
+This blocking operation is the completion boundary: signals arriving afterward
+do not cancel the completed attempt or change its verdict. The already-reaped
+command's historical PID is not targeted during final validation/publication.
+
+SIGKILL allows no cleanup:
 if the command still holds the inherited lock, status remains `running` and starts
 continue joining. Once that lock is gone, status becomes `died`; the next start
 creates a fresh attempt. The tool never guesses liveness from a reused PID.

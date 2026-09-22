@@ -321,7 +321,8 @@ def supervise(attempt, descriptor, environment_descriptor):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(child.pid, signal.SIGTERM)
 
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    cancellation_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    for sig in cancellation_signals:
         signal.signal(sig, abort)
     result = None
     try:
@@ -361,6 +362,9 @@ def supervise(attempt, descriptor, environment_descriptor):
                 # The group may outlive its leader when a child ignores TERM.
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(child.pid, signal.SIGKILL)
+        # The foreground command has been reaped. Later cancellation must not
+        # signal a process group using its now-historical PID.
+        child = None
         result = {"state": "pass" if rc == 0 else "fail", "exit_code": rc}
         if interrupted:
             result.update(state="error", reason="supervisor interrupted by signal " + str(interrupted[0]))
@@ -372,6 +376,12 @@ def supervise(attempt, descriptor, environment_descriptor):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(child.pid, signal.SIGKILL)
             child.wait()
+    # Completion boundary: atomically stop accepting cancellation before the
+    # final interruption check. Keep signals blocked through publication/exit;
+    # otherwise a handler could accept cancellation after we chose success.
+    signal.pthread_sigmask(signal.SIG_BLOCK, cancellation_signals)
+    if interrupted:
+        result.update(state="error", reason="supervisor interrupted by signal " + str(interrupted[0]))
     result["ended"] = time.time()
     atomic(attempt / "result.json", result)
     os.close(descriptor)

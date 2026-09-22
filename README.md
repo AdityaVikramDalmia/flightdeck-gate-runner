@@ -85,6 +85,11 @@ selection; read [cache identity](docs/cache-identity.md) before relying on a res
 The project must stay unchanged while the command runs. Detected input changes
 produce an error instead of reusable success.
 
+Cancellation remains active through final input validation. The supervisor then
+blocks cancellation signals before deciding and publishing its terminal result;
+signals arriving after that [completion boundary](docs/lifecycle.md) do not change
+the completed verdict.
+
 `status`, `wait`, and `log` default to the latest attempt created for the current
 worktree. `list` also selects the current worktree; `list --all-worktrees` includes
 every worktree sharing the state store.

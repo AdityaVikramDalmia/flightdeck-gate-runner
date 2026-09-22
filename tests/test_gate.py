@@ -174,6 +174,77 @@ class GateTests(unittest.TestCase):
         self.assertEqual(result["state"], "error")
         self.assertIn("interrupted", result["reason"])
 
+    def test_final_snapshot_cancellation_cannot_be_reused_as_pass(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signal=signum):
+                wrapper = self.base / ("git shim " + str(signum))
+                wrapper.mkdir()
+                marker = wrapper / "command-finished"
+                evidence = wrapper / "signal-sent"
+                real_git = shutil.which("git")
+                store = self.root / ".git/gate-runner"
+                (wrapper / "git").write_text(
+                    "#!" + sys.executable + "\nimport json,os,sys\nfrom pathlib import Path\n"
+                    + "marker=Path(" + repr(str(marker)) + ")\n"
+                    + "evidence=Path(" + repr(str(evidence)) + ")\n"
+                    + "if marker.exists() and not evidence.exists():\n"
+                    + " metas=Path(" + repr(str(store)) + ").glob('runs/*/attempts/*/meta.json')\n"
+                    + " assert any(json.loads(p.read_text()).get('supervisor_pid') == os.getppid() for p in metas)\n"
+                    + " evidence.write_text(str(os.getppid()))\n"
+                    + " os.kill(os.getppid(), " + str(int(signum)) + ")\n"
+                    + "os.execv(" + repr(real_git) + ", [" + repr(real_git) + ", *sys.argv[1:]])\n")
+                (wrapper / "git").chmod(0o755)
+                env = os.environ.copy()
+                env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
+                args = ("--json", "start", "--wait", "--", sys.executable, "-c",
+                        "from pathlib import Path; Path(" + repr(str(marker)) + ").touch()")
+                first = json.loads(self.run_gate(*args, env=env, expected=6).stdout)
+                self.assertEqual(first["state"], "error")
+                self.assertEqual(first["exit_code"], 0)
+                self.assertEqual(first["reason"], "supervisor interrupted by signal " + str(int(signum)))
+                meta = json.loads((Path(first["path"]) / "meta.json").read_text())
+                self.assertEqual(evidence.read_text(), str(meta["supervisor_pid"]))
+                cached = json.loads(self.run_gate(*args, env=env, expected=6).stdout)
+                self.assertEqual(cached["attempt"], first["attempt"])
+                self.assertEqual(cached["state"], "error")
+
+    def test_cancellation_after_completion_boundary_does_not_change_verdict(self):
+        # Run the real supervisor in an owned subprocess, injecting actual
+        # signals at terminal publication. No production timing hooks are added.
+        driver = r'''
+import json, os, signal, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from gate_runner import cli
+root, attempt = map(Path, sys.argv[2:])
+attempt.mkdir()
+cli.atomic(attempt / "request.json", {"tree": str(root), "command": [sys.executable, "-c", "pass"],
+           "inputs": [], "snapshot": cli.snapshot(root, [])})
+cli.atomic(attempt / "meta.json", {"started": 0})
+original_atomic = cli.atomic
+def publish(path, value):
+    if path.name == "result.json":
+        signals = {signal.SIGTERM, signal.SIGINT, signal.SIGHUP}
+        for signum in signals:
+            os.kill(os.getpid(), signum)
+        assert signals <= signal.sigpending(), "completion signals were not blocked"
+    original_atomic(path, value)
+cli.atomic = publish
+with (attempt / "environment.json").open("w") as stream:
+    json.dump(dict(os.environ), stream)
+environment_descriptor = os.open(attempt / "environment.json", os.O_RDONLY)
+descriptor = os.open(attempt / "lock", os.O_CREAT | os.O_RDWR, 0o600)
+cli.supervise(attempt, descriptor, environment_descriptor)
+print((attempt / "result.json").read_text())
+'''
+        process = subprocess.run([sys.executable, "-c", driver, str(SOURCE), str(self.root),
+                                  str(self.base / "completion attempt")],
+                                 capture_output=True, text=True, timeout=10)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        result = json.loads(process.stdout)
+        self.assertEqual(result["state"], "pass")
+        self.assertEqual(result["exit_code"], 0)
+
     def test_sigkill_supervisor_keeps_child_lock_then_reports_died(self):
         record = self.record("start", "--shell", "sleep 1.5", expected=0)
         meta = self.wait_meta(record)

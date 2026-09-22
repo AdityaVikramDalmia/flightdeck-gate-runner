@@ -31,3 +31,10 @@ contribution graph.
 The maintainer also marked all twelve repositories deprecated for new Claude Code
 integrations on **2026-09-22**. This is a present maintenance decision, not a
 historical claim that all utilities were replaced by native features.
+
+On **2026-09-22**, a later correctness fix closes the late-signal window in the
+standalone Python supervisor: cancellation remains effective during final input
+validation and ends at an explicit signal-blocking boundary before publication.
+This repair and its regressions are September work, not part of the July/August
+source mechanism or the original extraction. The new receipt is recorded
+separately from the original validation evidence.

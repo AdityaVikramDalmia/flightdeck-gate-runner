@@ -10,6 +10,11 @@ command contracts under `docs/` relevant to the requested change.
 
 Preserve code-state and command identity, immutable attempts, detached-process ownership, and explicit exit evidence. A reused result covers only declared inputs; it is not a hermetic build.
 
+Preserve the completion boundary in `docs/lifecycle.md`: cancellation stays active
+through final input validation; atomically block cancellation before the final
+interruption check and terminal publication. Test both sides with owned, synthetic
+processes. Do not signal a reaped command using its historical PID.
+
 Use `make test` and the documented isolated demo. Install into a disposable prefix
 when installation changes; do not install over a user's commands to test a package.
 Fixtures must not read real home configuration, sessions, credentials, or ledgers.
