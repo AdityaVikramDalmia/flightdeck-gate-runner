@@ -32,7 +32,9 @@ gate-run start --wait --env MODE=ci -- python3 -m unittest
 
 ## Environment and external dependencies
 
-The command inherits the caller's complete environment. Only declared variables
+The command inherits the caller's complete environment. Explicit `--env` overrides
+apply to the command; they do not configure the detached Python supervisor or its
+Git snapshot commands. Only declared variables
 and `PATH` enter the identity. Declare all variables affecting results, including
 locale, feature flags, credentials selecting a remote test dataset, and runtime
 search paths. `--env-key NAME` hashes the inherited value; `--env NAME=VALUE` sets
@@ -58,3 +60,7 @@ that is reverted before the final check, can escape detection. Keep the working
 tree and declared inputs stable during execution. Other Git internal state beyond
 HEAD/index entries (for example reflogs and branch names) is not tracked. Commands
 whose result depends on those values need a suitable salt.
+
+The current cache identity schema is 2. It intentionally gives new keys after the
+command-environment isolation fix, so older attempts remain inspectable but are
+not reused by new starts.

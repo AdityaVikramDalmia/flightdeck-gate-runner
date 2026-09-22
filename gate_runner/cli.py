@@ -44,9 +44,38 @@ def atomic(path, value):
 
 def read_json(path):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    if not isinstance(value, dict):
+        raise ValueError("record must be a JSON object: " + str(path))
+    return value
+
+
+def terminal_result(path):
+    value = read_json(path)
+    if value is None:
+        return None
+    verdict = value.get("state")
+    ended = value.get("ended")
+    code = value.get("exit_code")
+    try:
+        valid_ended = type(ended) in (int, float) and math.isfinite(ended)
+    except OverflowError:
+        valid_ended = False
+    if (verdict not in ("pass", "fail", "error")
+            or not valid_ended
+            or set(value) - {"state", "exit_code", "ended", "reason"}):
+        raise ValueError("invalid terminal result: " + str(path))
+    if verdict in ("pass", "fail"):
+        if type(code) is not int or (code == 0) != (verdict == "pass"):
+            raise ValueError("terminal verdict disagrees with command exit evidence: " + str(path))
+    elif (("exit_code" in value and type(code) is not int)
+          or not isinstance(value.get("reason"), str) or not value["reason"]):
+        raise ValueError("invalid error result: " + str(path))
+    if "reason" in value and not isinstance(value["reason"], str):
+        raise ValueError("invalid result reason: " + str(path))
+    return value
 
 
 def digest(value):
@@ -130,7 +159,7 @@ def config(args, root):
     # Relative executable resolution follows the repository root, as execution does.
     if os.sep in command[0]:
         executable = str((root / command[0]).resolve())
-    identity = {"schema": 1, "version": VERSION, "tree": str(root), "command": command,
+    identity = {"schema": 2, "version": VERSION, "tree": str(root), "command": command,
                 "executable": executable, "environment": selected,
                 "salt": args.salt, "inputs": args.input}
     state = snapshot(root, args.input)
@@ -146,10 +175,25 @@ def latest_file(store, root):
     return store / "latest" / (digest({"tree": str(root)}) + ".json")
 
 
+def above_stdio(descriptor):
+    """Inherited coordination descriptors must survive child stdio redirection."""
+    if descriptor >= 3:
+        return descriptor
+    replacement = fcntl.fcntl(descriptor, fcntl.F_DUPFD_CLOEXEC, 3)
+    os.close(descriptor)
+    return replacement
+
+
 def open_lock(store, key):
     locks = store / "locks"
     locks.mkdir(parents=True, exist_ok=True)
-    return (locks / (key + ".lock")).open("a+b")
+    descriptor = os.open(str(locks / (key + ".lock")), os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+    try:
+        descriptor = above_stdio(descriptor)
+        return os.fdopen(descriptor, "a+b")
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def take_lock(stream):
@@ -164,8 +208,8 @@ def current_attempt(store, key):
     pointer = read_json(store / "runs" / key / "current.json")
     if pointer is None:
         return None
-    attempt = pointer["attempt"]
-    if not re.fullmatch(r"[0-9a-f]{32}", attempt):
+    attempt = pointer.get("attempt")
+    if not isinstance(attempt, str) or not re.fullmatch(r"[0-9a-f]{32}", attempt):
         raise ValueError("invalid attempt pointer")
     return store / "runs" / key / "attempts" / attempt
 
@@ -177,7 +221,6 @@ def state(store, key):
         if attempt is None:
             return {"key": key, "state": "running" if not acquired else "missing"}
         meta = read_json(attempt / "meta.json") or {}
-        result = read_json(attempt / "result.json")
         base = {"key": key, "attempt": attempt.name, "path": str(attempt),
                 "tree": meta.get("tree"),
                 "log": str(attempt / "command.log"), "started": meta.get("started")}
@@ -186,6 +229,7 @@ def state(store, key):
             # just because its supervisor died. Terminal result becomes visible
             # only when every process holding the descriptor has released it.
             return dict(base, state="running")
+        result = terminal_result(attempt / "result.json")
         if result:
             return dict(base, **result)
         return dict(base, state="died", reason="no terminal record and no live lock holder")
@@ -221,7 +265,7 @@ def start(args, store, key, request, env):
         if not take_lock(lock):
             return wait_for(store, key, args.timeout) if args.wait else state(store, key)
         old = current_attempt(store, key)
-        old_result = read_json(old / "result.json") if old else None
+        old_result = terminal_result(old / "result.json") if old and not args.force else None
         if old_result is not None and not args.force:
             # Cannot call state while this descriptor holds the lock.
             return dict(old_result, key=key, attempt=old.name, path=str(old),
@@ -235,22 +279,39 @@ def start(args, store, key, request, env):
         latest.parent.mkdir(parents=True, exist_ok=True)
         atomic(latest, {"key": key})
         try:
-            with (attempt / "supervisor.log").open("ab", buffering=0) as log:
-                subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
-                                  "_supervise", str(attempt), str(lock.fileno())],
-                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                 cwd=str(request["tree"]), env=env, start_new_session=True,
-                                 pass_fds=(lock.fileno(),))
+            # Command overrides must not configure the supervisor's interpreter or
+            # its Git snapshot commands. Transfer the command environment through
+            # an anonymous pipe; never write it into an on-disk request or argv.
+            read_fd, write_fd = os.pipe()
+            try:
+                read_fd = above_stdio(read_fd)
+                write_fd = above_stdio(write_fd)
+                with (attempt / "supervisor.log").open("ab", buffering=0) as log:
+                    subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
+                                      "_supervise", str(attempt), str(lock.fileno()), str(read_fd)],
+                                     stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                     cwd=str(request["tree"]), start_new_session=True,
+                                     pass_fds=(lock.fileno(), read_fd))
+                os.close(read_fd)
+                read_fd = None
+                stream = os.fdopen(write_fd, "w", encoding="utf-8")
+                write_fd = None
+                with stream:
+                    json.dump(env, stream, ensure_ascii=True)
+            finally:
+                if read_fd is not None:
+                    os.close(read_fd)
+                if write_fd is not None:
+                    os.close(write_fd)
         except OSError as exc:
             atomic(attempt / "result.json", {"state": "error", "ended": time.time(),
                                               "reason": "cannot launch supervisor: " + str(exc)})
     return wait_for(store, key, args.timeout) if args.wait else state(store, key)
 
 
-def supervise(attempt, descriptor):
+def supervise(attempt, descriptor, environment_descriptor):
     # The inherited descriptor holds the same open-file-description lock acquired
     # by start. Never unlock it explicitly: close on exit, including SIGKILL.
-    request = read_json(attempt / "request.json")
     child = None
     interrupted = []
 
@@ -262,17 +323,27 @@ def supervise(attempt, descriptor):
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, abort)
-    meta = read_json(attempt / "meta.json")
-    meta["supervisor_pid"] = os.getpid()
-    atomic(attempt / "meta.json", meta)
     result = None
     try:
+        request = read_json(attempt / "request.json")
+        meta = read_json(attempt / "meta.json")
+        if request is None or meta is None:
+            raise ValueError("supervisor request or metadata is missing")
+        meta["supervisor_pid"] = os.getpid()
+        atomic(attempt / "meta.json", meta)
+        with os.fdopen(environment_descriptor, "r", encoding="utf-8") as stream:
+            command_environment = json.load(stream)
+        if (not isinstance(command_environment, dict)
+                or any(not isinstance(k, str) or not isinstance(v, str)
+                       for k, v in command_environment.items())):
+            raise ValueError("invalid command environment transfer")
         if interrupted:
             raise RuntimeError("interrupted before launch")
         with (attempt / "command.log").open("ab", buffering=0) as log:
             child = subprocess.Popen(request["command"], cwd=request["tree"],
                                      stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                     start_new_session=True, pass_fds=(descriptor,))
+                                     env=command_environment, start_new_session=True,
+                                     pass_fds=(descriptor,))
             meta["command_pid"] = child.pid
             atomic(attempt / "meta.json", meta)
             while child.poll() is None:
@@ -307,8 +378,8 @@ def supervise(attempt, descriptor):
 
 
 def main():
-    if len(sys.argv) == 4 and sys.argv[1] == "_supervise":
-        supervise(Path(sys.argv[2]), int(sys.argv[3]))
+    if len(sys.argv) == 5 and sys.argv[1] == "_supervise":
+        supervise(Path(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]))
         return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=VERSION)
@@ -373,7 +444,7 @@ def main():
         if latest is None:
             return emit({"key": "latest", "state": "missing"}, args.json)
         key = latest["key"]
-    if not re.fullmatch("[0-9a-f]{64}", key):
+    if not isinstance(key, str) or not re.fullmatch("[0-9a-f]{64}", key):
         raise ValueError("key must be 64 lowercase hexadecimal characters or 'latest'")
     if args.action == "log":
         attempt = current_attempt(store, key)

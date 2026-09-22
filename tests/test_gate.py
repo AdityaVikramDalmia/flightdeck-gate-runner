@@ -368,6 +368,76 @@ class GateTests(unittest.TestCase):
         result = self.record("wait", record["key"], "--timeout", "5", expected=6)
         self.assertEqual(result["state"], "error")
 
+    def test_closed_stdin_does_not_drop_supervisor_lock(self):
+        command = "mkdir -p output; echo run >> output/count; sleep .6"
+        process = subprocess.run(
+            [str(self.tool), "--json", "start", "--shell", command],
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            preexec_fn=lambda: os.close(0), timeout=5,
+        )
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        first = json.loads(process.stdout)
+        self.wait_meta(first)
+        joined = self.record("start", "--force", "--shell", command, expected=0)
+        self.assertEqual(first["attempt"], joined["attempt"])
+        self.record("wait", first["key"], "--timeout", "5", expected=0)
+        self.assertEqual((self.root / "output/count").read_text(), "run\n")
+
+    def test_corrupt_terminal_result_cannot_be_reused_as_success(self):
+        first = self.record("start", "--wait", "--shell", "true", expected=0)
+        result_path = Path(first["path"]) / "result.json"
+        for invalid in ({"state": "pass"}, {"state": "pass", "exit_code": 9, "ended": time.time()},
+                        {"state": "pass", "exit_code": False, "ended": time.time()},
+                        {"state": "pass", "exit_code": 0, "ended": 10 ** 1000},
+                        {"state": "pass", "exit_code": 0, "ended": float("nan")},
+                        [], "pass", None):
+            with self.subTest(invalid=invalid):
+                result_path.write_text(json.dumps(invalid))
+                result = self.run_gate("status", first["key"], expected=6)
+                self.assertNotIn("Traceback", result.stderr)
+                self.run_gate("start", "--wait", "--shell", "true", expected=6)
+
+    def test_bad_pointer_shapes_are_tool_errors_without_tracebacks(self):
+        first = self.record("start", "--wait", "--shell", "true", expected=0)
+        pointer = Path(first["path"]).parent.parent / "current.json"
+        for invalid in ([], {"attempt": None}, {"attempt": 7}):
+            with self.subTest(invalid=invalid):
+                pointer.write_text(json.dumps(invalid))
+                result = self.run_gate("status", first["key"], expected=6)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_command_environment_does_not_configure_supervisor(self):
+        # A shell command can consume PYTHONHOME as ordinary input. It must not
+        # break Python before the requested command can even start.
+        secret = "fixture-private-python-home"
+        result = self.record("start", "--wait", "--env", "PYTHONHOME=" + secret,
+                             "--shell", 'test -n "$PYTHONHOME"', expected=0)
+        self.assertEqual(result["state"], "pass")
+        supervisor_log = (Path(result["path"]) / "supervisor.log").read_text()
+        self.assertNotIn(secret, supervisor_log)
+        for name in ("request.json", "meta.json", "result.json", "command.log"):
+            self.assertNotIn(secret, (Path(result["path"]) / name).read_text())
+
+    def test_command_path_override_does_not_change_snapshot_git(self):
+        result = self.record("start", "--wait", "--env", "PATH=/fixture-no-tools",
+                             "--shell", 'test "$PATH" = /fixture-no-tools', expected=0)
+        self.assertEqual(result["state"], "pass")
+
+    def test_large_command_environment_crosses_pipe_without_persisting(self):
+        value = "x" * 80000
+        result = self.record("start", "--wait", "--env", "LARGE=" + value,
+                             "--shell", 'test "${#LARGE}" -eq 80000', expected=0)
+        self.assertLess((Path(result["path"]) / "request.json").stat().st_size, 5000)
+
+    def test_force_retries_corrupt_result_without_changing_old_evidence(self):
+        first = self.record("start", "--wait", "--shell", "true", expected=0)
+        old_result = Path(first["path"]) / "result.json"
+        damaged = '{"state":"pass"}\n'
+        old_result.write_text(damaged)
+        second = self.record("start", "--force", "--wait", "--shell", "true", expected=0)
+        self.assertNotEqual(first["attempt"], second["attempt"])
+        self.assertEqual(old_result.read_text(), damaged)
+
     def test_invalid_timeouts(self):
         for value in ("-1", "nan", "inf"):
             self.run_gate("wait", "--timeout", value, expected=2)

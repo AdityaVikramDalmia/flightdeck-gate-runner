@@ -2,12 +2,15 @@
 
 A start takes a nonblocking operating-system advisory lock for its key. The same
 open file descriptor is inherited by a detached supervisor and its command.
+Coordination descriptors are always above standard input/output/error, so closing
+a caller stream cannot cause child redirection to discard the lock.
 Contending starts join the current attempt. `--force` bypasses terminal evidence;
 it never starts over a lock held by a running attempt.
 
 The command and supervisor run in separate sessions, disconnected from the
 launcher's terminal and process group. Killing the launcher or timing out a
-`wait` does not terminate the run. All standard input is `/dev/null`; interactive
+`wait` does not terminate the run. An interruption during the startup handoff can leave an `error` or `died` attempt;
+no success is inferred before the command finishes. All standard input is `/dev/null`; interactive
 commands are unsupported.
 
 ## Terminal states
@@ -48,7 +51,9 @@ gate-runner/
       result.json
 ```
 
-`request.json` records command argv, input names, tree path, and digests. `meta.json`
+`request.json` records command argv, input names, tree path, and digests. Command
+environment values travel through an anonymous inherited pipe, are consumed before
+the command starts, and are never written into a request file or supervisor argv. `meta.json`
 contains timestamps and diagnostic PIDs. `result.json` contains the verdict,
 original command exit code when available, completion timestamp, and error reason
 when applicable. `command.log` merges stdout/stderr. `supervisor.log` records
@@ -64,3 +69,9 @@ read never reports an older terminal verdict while a new attempt holds its lock.
 Do not delete lock files while any command can be using the store: deleting an
 inode that is still locked defeats advisory locking. Store paths and records are
 trusted local data, not an interface for untrusted writers or multiple machines.
+
+Terminal records are checked before reuse: `pass` requires integer exit code 0,
+`fail` requires a nonzero integer exit code, and terminal timestamps and error
+reasons must have the expected types. Malformed JSON, pointers, or terminal
+evidence produces tool error 6 rather than reusable success. This is consistency
+validation of trusted local state, not tamper-proof attestation.

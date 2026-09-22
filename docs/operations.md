@@ -22,7 +22,9 @@ from a `start`, `key`, or JSON response when coordinating multiple commands.
 on the returned log path works. `list` shows the current attempt for every key.
 
 A cached `pass`, `fail`, or `error` is reused until `--force` or changed inputs give
-a new run. A `died` attempt retries automatically on the next start. There is no
+a new run. A `died` attempt retries automatically on the next start. Invalid terminal records
+produce tool error 6; `start --force` can create a fresh attempt without changing
+the damaged result, provided its current-attempt pointer is still valid. There is no
 automatic failure rerun or log-parsing adapter: a generic command's failure cannot
 be turned into success by printed summary text.
 
@@ -44,7 +46,7 @@ The current release candidate was exercised locally on macOS with the system
 Bash 3.2 launcher, Git, and Python 3.14. Its implementation uses Python 3.9+ standard
 library APIs, `fcntl.flock`, detached POSIX sessions, and Git's NUL-delimited file
 listing. Python 3.9 is the declared syntax/API floor, not a separately exercised
-runtime in this validation environment. Linux has not been verified; Windows,
+runtime in this validation environment. Linux has also been exercised in an unprivileged Alpine container. Windows,
 network filesystems, submodule repositories, and hostile multi-user state stores
 are outside the supported scope.
 
