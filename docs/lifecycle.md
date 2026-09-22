@@ -1,0 +1,66 @@
+# Lifecycle and durable records
+
+A start takes a nonblocking operating-system advisory lock for its key. The same
+open file descriptor is inherited by a detached supervisor and its command.
+Contending starts join the current attempt. `--force` bypasses terminal evidence;
+it never starts over a lock held by a running attempt.
+
+The command and supervisor run in separate sessions, disconnected from the
+launcher's terminal and process group. Killing the launcher or timing out a
+`wait` does not terminate the run. All standard input is `/dev/null`; interactive
+commands are unsupported.
+
+## Terminal states
+
+- **pass**: command exit 0 and unchanged declared inputs.
+- **fail**: nonzero command exit and unchanged declared inputs.
+- **error**: launch/tool error, supervisor interruption, or changed inputs.
+- **died**: no terminal record and no remaining lock holder.
+
+A SIGTERM/SIGINT/SIGHUP to the supervisor terminates the command group, with a
+SIGKILL fallback after two seconds, and records `error`. SIGKILL allows no cleanup:
+if the command still holds the inherited lock, status remains `running` and starts
+continue joining. Once that lock is gone, status becomes `died`; the next start
+creates a fresh attempt. The tool never guesses liveness from a reused PID.
+
+The supervisor is not a full process-tree manager. Commands must stay in the
+foreground and wait for their own children. A program that daemonizes, deliberately
+closes inherited descriptors, or moves children into other sessions can outlive
+this coordination model. Such commands are unsupported. Do not kill the command
+by an unverified historical PID from a record.
+
+## On-disk layout
+
+The default store is `<git-common-dir>/gate-runner/`, shared by linked worktrees
+but keyed separately for each canonical worktree path:
+
+```text
+gate-runner/
+  latest/<worktree-digest>.json
+  locks/<key>.lock
+  runs/<key>/
+    current.json
+    attempts/<attempt-id>/
+      request.json
+      meta.json
+      command.log
+      supervisor.log
+      result.json
+```
+
+`request.json` records command argv, input names, tree path, and digests. `meta.json`
+contains timestamps and diagnostic PIDs. `result.json` contains the verdict,
+original command exit code when available, completion timestamp, and error reason
+when applicable. `command.log` merges stdout/stderr. `supervisor.log` records
+unexpected interpreter diagnostics. Results and pointers are published with an
+atomic rename and `fsync`; logs are streamed and may lose a final buffer on sudden
+machine/power failure. No guarantee is made beyond local filesystem semantics.
+
+Every rerun gets a new immutable attempt directory. The previous log and result
+are retained; `current.json` points to the current attempt. Each worktree's latest
+pointer means its most recently *created* attempt, not the most recently joined record. A status
+read never reports an older terminal verdict while a new attempt holds its lock.
+
+Do not delete lock files while any command can be using the store: deleting an
+inode that is still locked defeats advisory locking. Store paths and records are
+trusted local data, not an interface for untrusted writers or multiple machines.

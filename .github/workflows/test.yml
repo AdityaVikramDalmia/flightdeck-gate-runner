@@ -1,0 +1,24 @@
+name: Tests
+# Private candidate: runs only when explicitly requested, never on push.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified 2026-09-22
+      - name: Verify dependencies
+        shell: bash
+        run: |
+          for tool in bash python3 git make; do
+            command -v "$tool"
+          done
+      - name: Test
+        run: make test

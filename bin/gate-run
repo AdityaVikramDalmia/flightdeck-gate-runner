@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Bash 3-compatible entry point. Keep this file beside ../gate_runner/.
+set -e
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIRECTORY="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$DIRECTORY/$SOURCE" ;; esac
+done
+ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+exec python3 "$ROOT/gate_runner/cli.py" "$@"
