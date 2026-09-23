@@ -8,8 +8,8 @@ for work in this repository. Contracts and installation start at [README.md](REA
 - Run `make test` and relevant documented demos before committing changes.
 - Keep tests synthetic and isolated; preserve unrelated user edits.
 - Keep source-history dates truthful and retain license/notice attribution.
-- Public launch is deferred. Do not change visibility or modify the original
-  Flightdeck runtime while preparing this component.
+- The repository is public. Do not change visibility or modify the original
+  Flightdeck runtime while maintaining this component.
 
 These are deprecated reference artifacts for new Claude Code integrations as of
 2026-09-22. Preserve that status in README, examples, skills, and release material;

@@ -1,14 +1,14 @@
 # Gate Runner
 
 > **Deprecated for new Claude Code integrations — 2026-09-22.** Retained as an
-> Apache-2.0 reference project. Public launch remains deferred and the repository
-> remains private. This is a maintainer status decision, not a claim that Claude
+> Apache-2.0 public reference implementation. This is a maintainer status
+> decision, not a claim that Claude
 > Code replaces every capability. No ongoing feature work or support is promised.
 
 Run a development command once for a Git code state, join an existing run, and
 read its result after the launching terminal has gone away.
 
-**Private release candidate: 0.1.0rc1.** Licensed under Apache-2.0; public launch is deferred.
+**Public reference implementation: 0.1.0rc1.** Licensed under Apache-2.0; deprecated for new Claude Code integrations as of 2026-09-22.
 
 Gate Runner records command output, the actual exit code, timestamps, and immutable
 attempts under your repository's Git directory. Concurrent starts for the same
@@ -105,6 +105,6 @@ records, limits, and [a complete fixture example](examples/README.md).
 ## License and maintenance
 
 Copyright 2026 Aditya Dalmia. Licensed under [Apache-2.0](LICENSE), with
-[attribution](NOTICE) and [source provenance](PROVENANCE.md). Public launch is
-deferred; repository access remains private. See the [release preparation index](docs/release/README.md),
+[attribution](NOTICE) and [source provenance](PROVENANCE.md). This is a public
+reference implementation, deprecated for new Claude Code integrations as of 2026-09-22. See the [release preparation index](docs/release/README.md),
 [contributing guide](CONTRIBUTING.md), and [security contact](SECURITY.md).

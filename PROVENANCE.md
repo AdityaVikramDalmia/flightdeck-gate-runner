@@ -1,6 +1,6 @@
 # Provenance
 
-This private release candidate extracts and generalizes the durable test-run
+This public reference implementation extracts and generalizes the durable test-run
 coordination design from source commit:
 
 `494799eea3b9e7ce8686506a288c297ccf96be8d`
@@ -25,4 +25,4 @@ are judged by their exit status. Project-specific suite parsing, automatic rerun
 notifications, and private integration hooks were removed.
 
 No public remote, personal filesystem path, or private incident history is needed
-to build or run this repository. The owner selected Apache-2.0 on 2026-09-22. See LICENSE and NOTICE; public launch remains deferred.
+to build or run this repository. The owner selected Apache-2.0 on 2026-09-22. See LICENSE and NOTICE. The repository is a public reference implementation, deprecated for new Claude Code integrations as of 2026-09-22.

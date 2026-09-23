@@ -1,5 +1,5 @@
 name: Tests
-# Private candidate: runs only when explicitly requested, never on push.
+# Runs only when explicitly requested, never on push.
 on:
   workflow_dispatch:
 permissions:
