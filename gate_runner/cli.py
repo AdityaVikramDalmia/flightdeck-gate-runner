@@ -474,9 +474,14 @@ def main():
     return emit(record, args.json)
 
 
-if __name__ == "__main__":
+def run():
+    """Console entry point shared by bin/gate-run and installed scripts."""
     try:
-        sys.exit(main())
+        return main()
     except (ValueError, OSError, subprocess.CalledProcessError, KeyError) as error:
         print("gate-run: " + str(error), file=sys.stderr)
-        sys.exit(6)
+        return 6
+
+
+if __name__ == "__main__":
+    sys.exit(run())

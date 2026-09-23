@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flightdeck-gate-runner"
+version = "0.1.0rc1"
+description = "Run a development command once per Git code state; join runs and read results after the terminal closes."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+
+[project.scripts]
+gate-run = "gate_runner.cli:run"
+
+[tool.setuptools]
+packages = ["gate_runner"]
